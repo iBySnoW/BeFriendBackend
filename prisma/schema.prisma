@@ -1,0 +1,366 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum ExpenseCategory {
+  FOOD
+  TRANSPORT
+  ACCOMMODATION
+  ACTIVITY
+  GIFT
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING
+  SETTLED
+  CANCELLED
+}
+
+enum PoolStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum PoolVisibility {
+  PUBLIC
+  PRIVATE
+  GROUP_MEMBERS
+}
+
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+  GROUP_MEMBERS
+}
+
+enum EventStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  EVENT_INVITATION
+  EXPENSE_ADDED
+  EXPENSE_SETTLED
+  POOL_CREATED
+  POOL_COMPLETED
+  GROUP_INVITATION
+  MESSAGE_RECEIVED
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique
+  email         String    @unique
+  password_hash String
+  full_name     String
+  avatar_url    String?
+  role          UserRole  @default(USER)
+  status        UserStatus @default(PENDING)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  created_groups    Group[]    @relation("GroupCreator")
+  created_events    Event[]    @relation("EventCreator")
+  created_expenses  Expense[]  @relation("ExpensePayer")
+  created_pools     Pool[]     @relation("PoolCreator")
+  created_messages  Message[]  @relation("MessageSender")
+  notifications     Notification[]
+  activities       Activity[]
+  payment_methods  PaymentMethod[]
+  notification_preferences NotificationPreference[]
+
+  // Many-to-many relations
+  groups           GroupMember[]
+  events           EventParticipant[]
+  expenses         ExpenseParticipant[]
+  contributions    Contribution[]
+}
+
+model Group {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  avatar_url  String?
+  created_by  Int
+  visibility  PoolVisibility @default(GROUP_MEMBERS)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  // Relations
+  creator     User      @relation("GroupCreator", fields: [created_by], references: [id])
+  events      Event[]
+  expenses    Expense[]
+  pools       Pool[]
+  messages    Message[]
+  activities  Activity[]
+  notifications Notification[]
+
+  // Many-to-many relations
+  members     GroupMember[]
+}
+
+model GroupMember {
+  id        Int      @id @default(autoincrement())
+  group_id  Int
+  user_id   Int
+  role      String   @default("member") // admin, member
+  joined_at DateTime @default(now())
+
+  // Relations
+  group     Group    @relation(fields: [group_id], references: [id])
+  user      User     @relation(fields: [user_id], references: [id])
+
+  @@unique([group_id, user_id])
+}
+
+model Event {
+  id                  Int       @id @default(autoincrement())
+  title               String
+  description         String?
+  location            String?
+  start_date          DateTime
+  end_date            DateTime?
+  group_id            Int
+  created_by          Int
+  image_url           String?
+  status              EventStatus @default(UPCOMING)
+  visibility          EventVisibility @default(GROUP_MEMBERS)
+  max_participants    Int?
+  registration_deadline DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  // Relations
+  group       Group     @relation(fields: [group_id], references: [id])
+  creator     User      @relation("EventCreator", fields: [created_by], references: [id])
+  expenses    Expense[]
+  pools       Pool[]
+  activities  Activity[]
+  notifications Notification[]
+
+  // Many-to-many relations
+  participants EventParticipant[]
+}
+
+model EventParticipant {
+  id        Int      @id @default(autoincrement())
+  event_id  Int
+  user_id   Int
+  status    String   @default("pending") // accepted, declined, pending
+  joined_at DateTime @default(now())
+
+  // Relations
+  event     Event    @relation(fields: [event_id], references: [id])
+  user      User     @relation(fields: [user_id], references: [id])
+
+  @@unique([event_id, user_id])
+}
+
+model Expense {
+  id           Int       @id @default(autoincrement())
+  title        String
+  amount       Float
+  currency     String    @default("EUR")
+  paid_by      Int
+  event_id     Int?
+  group_id     Int?
+  date         DateTime  @default(now())
+  description  String?
+  receipt_url  String?
+  category     ExpenseCategory @default(OTHER)
+  status       ExpenseStatus @default(PENDING)
+  payment_method String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  // Relations
+  payer        User      @relation("ExpensePayer", fields: [paid_by], references: [id])
+  event        Event?    @relation(fields: [event_id], references: [id])
+  group        Group?    @relation(fields: [group_id], references: [id])
+  activities   Activity[]
+
+  // Many-to-many relations
+  participants ExpenseParticipant[]
+
+  @@index([event_id])
+  @@index([group_id])
+}
+
+model ExpenseParticipant {
+  id           Int      @id @default(autoincrement())
+  expense_id   Int
+  user_id      Int
+  share_amount Float
+  is_paid      Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  // Relations
+  expense      Expense  @relation(fields: [expense_id], references: [id])
+  user         User     @relation(fields: [user_id], references: [id])
+
+  @@unique([expense_id, user_id])
+}
+
+model Pool {
+  id            Int       @id @default(autoincrement())
+  title         String
+  description   String?
+  target_amount Float?
+  current_amount Float    @default(0)
+  currency      String    @default("EUR")
+  event_id      Int?
+  group_id      Int?
+  created_by    Int
+  end_date      DateTime?
+  status        PoolStatus @default(ACTIVE)
+  visibility    PoolVisibility @default(GROUP_MEMBERS)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  creator       User      @relation("PoolCreator", fields: [created_by], references: [id])
+  event         Event?    @relation(fields: [event_id], references: [id])
+  group         Group?    @relation(fields: [group_id], references: [id])
+  activities    Activity[]
+
+  // Many-to-many relations
+  contributions Contribution[]
+
+  @@index([event_id])
+  @@index([group_id])
+}
+
+model Contribution {
+  id        Int      @id @default(autoincrement())
+  pool_id   Int
+  user_id   Int
+  amount    Float
+  message   String?
+  created_at DateTime @default(now())
+
+  // Relations
+  pool      Pool     @relation(fields: [pool_id], references: [id])
+  user      User     @relation(fields: [user_id], references: [id])
+
+  @@index([pool_id])
+}
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  content   String
+  sender_id Int
+  group_id  Int
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  sender    User     @relation("MessageSender", fields: [sender_id], references: [id])
+  group     Group    @relation(fields: [group_id], references: [id])
+
+  @@index([group_id])
+}
+
+model Notification {
+  id               Int      @id @default(autoincrement())
+  user_id          Int
+  title            String
+  content          String
+  type             NotificationType
+  is_read          Boolean  @default(false)
+  related_group_id Int?
+  related_event_id Int?
+  created_at       DateTime @default(now())
+
+  // Relations
+  user             User     @relation(fields: [user_id], references: [id])
+  group            Group?   @relation(fields: [related_group_id], references: [id])
+  event            Event?   @relation(fields: [related_event_id], references: [id])
+
+  @@index([user_id])
+  @@index([related_group_id])
+  @@index([related_event_id])
+}
+
+model Activity {
+  id               Int      @id @default(autoincrement())
+  user_id          Int
+  action           String   // created_group, joined_group, etc.
+  description      String
+  related_group_id Int?
+  related_event_id Int?
+  related_expense_id Int?
+  related_pool_id  Int?
+  created_at       DateTime @default(now())
+
+  // Relations
+  user             User     @relation(fields: [user_id], references: [id])
+  group            Group?   @relation(fields: [related_group_id], references: [id])
+  event            Event?   @relation(fields: [related_event_id], references: [id])
+  expense          Expense? @relation(fields: [related_expense_id], references: [id])
+  pool             Pool?    @relation(fields: [related_pool_id], references: [id])
+
+  @@index([user_id])
+  @@index([related_group_id])
+  @@index([related_event_id])
+}
+
+model PaymentMethod {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  type          String   // bank_transfer, paypal, etc.
+  details       String   // JSON stringified details
+  is_default    Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  user          User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+}
+
+model NotificationPreference {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  type          NotificationType
+  email_enabled Boolean  @default(true)
+  push_enabled  Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  user          User     @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, type])
+  @@index([user_id])
+}
