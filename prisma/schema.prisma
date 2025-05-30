@@ -79,7 +79,7 @@ model User {
   id            Int       @id @default(autoincrement())
   username      String    @unique
   email         String    @unique
-  password_hash String
+  password_hash String?
   full_name     String
   avatar_url    String?
   role          UserRole  @default(USER)
@@ -87,6 +87,11 @@ model User {
   last_login    DateTime?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
+
+  // OAuth fields
+  provider      String?   // "google" | "apple" | "email"
+  provider_id   String?   // ID unique du provider
+  email_verified Boolean  @default(false)
 
   // Relations
   created_groups    Group[]    @relation("GroupCreator")
@@ -98,6 +103,7 @@ model User {
   activities       Activity[]
   payment_methods  PaymentMethod[]
   notification_preferences NotificationPreference[]
+  sent_invitations  Invitation[] @relation("UserInvitations")
 
   // Many-to-many relations
   groups           GroupMember[]
@@ -127,6 +133,7 @@ model Group {
 
   // Many-to-many relations
   members     GroupMember[]
+  invitations Invitation[]
 }
 
 model GroupMember {
@@ -363,4 +370,17 @@ model NotificationPreference {
 
   @@unique([user_id, type])
   @@index([user_id])
+}
+
+model Invitation {
+  id          Int      @id @default(autoincrement())
+  group_id    Int
+  phone       String?
+  token       String   @unique
+  status      String   @default("pending")
+  invited_by  Int
+  created_at  DateTime @default(now())
+  accepted_at DateTime?
+  group       Group    @relation(fields: [group_id], references: [id])
+  inviter     User     @relation("UserInvitations", fields: [invited_by], references: [id])
 }

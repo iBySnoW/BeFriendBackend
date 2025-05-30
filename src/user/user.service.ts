@@ -6,7 +6,7 @@ type User = {
   id: number;
   username: string;
   email: string;
-  password_hash: string;
+  password_hash: string | null;
   full_name: string;
   avatar_url: string | null;
   role: 'ADMIN' | 'USER';
@@ -134,5 +134,13 @@ export class UserService {
         },
       },
     });
+  }
+
+  async findUserById(id: number) {
+    return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  async findUserByEmail(email: string) {
+    return this.prisma.user.findUnique({ where: { email } });
   }
 }
