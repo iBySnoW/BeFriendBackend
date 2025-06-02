@@ -6,6 +6,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
 
 @Controller('auth')
+@UseGuards(JwtAuthGuard)
 export class AuthController {
   constructor(private authService: AuthService) {}
 
